@@ -1,6 +1,6 @@
-# kohd_core/kohd_rules.py
+# kohd_translator/kohd_core/kohd_rules.py
 
-# The 3x3 grid layout of Kohd node names as shown in the PDF [cite: 1199]
+# The 3x3 grid layout of Kohd node names as shown in the PDF [cite: 4758]
 # Row 0: ABC, DEF, GHI
 # Row 1: JKL, MNO, PQR
 # Row 2: STU, VWX, YZ
@@ -11,7 +11,7 @@ NODE_LAYOUT = [
 ]
 
 # Defines the letters associated with each node
-# Based on PDF page 304 [cite: 1199]
+# Based on PDF page 304 [cite: 4758]
 NODE_LETTERS = {
     'ABC': ('A', 'B', 'C'),
     'DEF': ('D', 'E', 'F'),
@@ -26,7 +26,7 @@ NODE_LETTERS = {
 
 # Main mapping for each English letter to its node name and subnode count
 # Subnode count: 1 for 1st letter, 2 for 2nd, 3 for 3rd in the node's tuple
-# Based on PDF page 304 construction steps 1-3 [cite: 1200, 1203, 1206]
+# Based on PDF page 304 construction steps 1-3 [cite: 4760, 4763, 4766]
 LETTER_TO_NODE_INFO = {}
 for node_name, letters_in_node in NODE_LETTERS.items():
     for i, letter in enumerate(letters_in_node):
@@ -47,7 +47,7 @@ NODE_POSITIONS = {
     'STU': (50, 250),  'VWX': (150, 250), 'YZ':  (250, 250)
 }
 
-# Lexicon for simplified, non-nodally constructed forms (PDF page 306) [cite: 1219, 1220, 1221]
+# Lexicon for simplified, non-nodally constructed forms (PDF page 306) [cite: 4779, 4780, 4781]
 # The 'glyph_type' can be used by the drawing engine to know how to render them.
 # Specific drawing routines will be needed for each type.
 LEXICON_GLYPHS = {
@@ -63,7 +63,7 @@ LEXICON_GLYPHS = {
     "UNIQUE_EXISTS_ONE": {'glyph_type': 'UNIQUE_EXISTS_ONE', 'text': "Unique. There exists exactly one."},
     "FROM_TO":      {'glyph_type': 'FROM_TO', 'text': "From-to. Transition."}, # Placed between two glyphs
     # Pronouns (glyph_type needs to map to a specific drawing routine for each)
-    # Based on clarification: glyphs are to the left of the words on PDF page 306 [cite: 1221]
+    # Based on clarification: glyphs are to the left of the words on PDF page 306 [cite: 4781]
     "I_ME":         {'glyph_type': 'PRONOUN_I_ME', 'text': "I/Me"},
     "YOU_SINGULAR": {'glyph_type': 'PRONOUN_YOU_SINGULAR', 'text': "You"},
     "THEM_SINGULAR":{'glyph_type': 'PRONOUN_THEM_SINGULAR', 'text': "Them <singular>"},
@@ -74,7 +74,7 @@ LEXICON_GLYPHS = {
     "THEIR_THEIRS_PLURAL":   {'glyph_type': 'PRONOUN_THEIR_THEIRS_PLURAL', 'text': "Their/Theirs <plural>"},
 }
 
-# Articles modify the charge node (PDF page 306) [cite: 1225, 1226]
+# Articles modify the charge node (PDF page 306) [cite: 4785, 4786]
 ARTICLE_GLYPHS = {
     "THE": {'glyph_type': 'ARTICLE_THE', 'text': "The <definite>"}, # Theta-like symbol
     "A":   {'glyph_type': 'ARTICLE_A', 'text': "A <indefinite>"}    # Circle with plus
@@ -86,10 +86,10 @@ SUBNODE_RADIUS = 3
 # Ring node representation (e.g., offset from parent node edge)
 RING_NODE_INSET_FACTOR = 0.7 # Ring radius is 70% of parent node radius
 
-# Null Modifier (PDF page 305) [cite: 1215]
+# Null Modifier (PDF page 305) [cite: 4775]
 NULL_MODIFIER_GLYPH_TYPE = 'NULL_MODIFIER'
 
-# Punctuation (PDF page 307) [cite: 1231]
+# Punctuation (PDF page 307) [cite: 4791]
 PUNCTUATION_GLYPH_TYPES = {
     '.': 'PERIOD',
     '!': 'EXCLAMATION',
@@ -97,7 +97,7 @@ PUNCTUATION_GLYPH_TYPES = {
     ',': 'COMMA' # Comma intersects a trace between words
 }
 
-# Coupler (PDF page 306) [cite: 1222]
+# Coupler (PDF page 306) [cite: 4782]
 COUPLER_GLYPH_TYPE = 'COUPLER'
 
 if __name__ == '__main__':

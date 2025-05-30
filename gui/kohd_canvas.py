@@ -1,3 +1,4 @@
+# kohd_translator/gui/kohd_canvas.py
 import math
 from PyQt6.QtWidgets import QWidget # type: ignore
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QPalette, QPainterPath # type: ignore
