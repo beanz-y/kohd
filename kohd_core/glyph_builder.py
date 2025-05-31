@@ -52,7 +52,6 @@ class KohdGlyphBuilder:
         dy = to_node_coords[1] - from_node_coords[1] 
 
         if abs(dx) < 1e-6 and abs(dy) < 1e-6: 
-             # Should ideally not happen if from_node != to_node, but as a fallback:
             return 'E' 
 
         if abs(dx) >= abs(dy): 
@@ -61,7 +60,6 @@ class KohdGlyphBuilder:
             return 'S' if dy > 0 else 'N'
 
     def _get_next_offset_idx(self, node_name: str, face_key: str) -> int:
-        # Key for manager is (node_name, face_key), ignoring ring_level for offset pool
         node_face_tuple = (node_name, face_key)
 
         if node_face_tuple not in self.node_connection_manager:
@@ -86,7 +84,7 @@ class KohdGlyphBuilder:
                 i += 1
             if not found: 
                 offset_idx_to_try = i 
-                while offset_idx_to_try in used_indices_for_face: # Ensure positive fallback is also unique
+                while offset_idx_to_try in used_indices_for_face:
                     offset_idx_to_try +=1
         
         used_indices_for_face.append(offset_idx_to_try)
@@ -120,7 +118,9 @@ class KohdGlyphBuilder:
             target_node_name_for_letter = letter_info['node_name']
             subnode_info_for_letter = {'letter': letter, 'count': letter_info['subnodes']}
 
+            # Ensure target_node_data is fetched/created before reading its ring_count
             target_node_data = self._get_or_create_node_element_data(target_node_name_for_letter, current_node_data_map)
+
 
             if i == 0:
                 _first_node_name_for_this_word = target_node_name_for_letter
@@ -131,13 +131,24 @@ class KohdGlyphBuilder:
                     _subnode_queue_for_current_trace.append(subnode_info_for_letter)
                 else:
                     from_node_name_for_trace = _current_processing_active_node_name
-                    from_node_data = current_node_data_map[from_node_name_for_trace]
+                    from_node_data = current_node_data_map[from_node_name_for_trace] # Should exist
 
                     _nodes_that_have_been_departed_from.add(from_node_name_for_trace)
                     is_return_to_target_node = target_node_name_for_letter in _nodes_that_have_been_departed_from
-
+                    
+                    # Determine connection ring levels
                     origin_connect_ring_level = from_node_data.get('ring_count', 0)
-                    target_connect_ring_level = target_node_data.get('ring_count', 0)
+                    current_rings_on_target_node = target_node_data.get('ring_count', 0)
+
+                    effective_target_connect_ring_level: int
+                    if is_return_to_target_node:
+                        # This trace connects to the next conceptual ring layer.
+                        # If target has 0 existing rings (base), this return uses ring_level 1.
+                        # If target has 1 existing ring, this return uses ring_level 2.
+                        effective_target_connect_ring_level = current_rings_on_target_node + 1
+                    else:
+                        # Not a return, connect to its current highest established ring level (or base if 0).
+                        effective_target_connect_ring_level = current_rings_on_target_node
                     
                     from_node_coords = self.rules['node_positions'][from_node_name_for_trace]
                     to_node_coords = self.rules['node_positions'][target_node_name_for_letter]
@@ -147,37 +158,34 @@ class KohdGlyphBuilder:
 
                     start_offset_idx = self._get_next_offset_idx(from_node_name_for_trace, exit_face)
                     
-                    # Straight line offset consistency (Point 2)
                     dx_trace = to_node_coords[0] - from_node_coords[0]
                     dy_trace = to_node_coords[1] - from_node_coords[1]
-                    align_tolerance = 0.1 # From trace_router
+                    align_tolerance = 0.1 
 
-                    if abs(dy_trace) < align_tolerance or abs(dx_trace) < align_tolerance: # H or V aligned
+                    is_h_aligned = abs(dy_trace) < align_tolerance
+                    is_v_aligned = abs(dx_trace) < align_tolerance
+
+                    if is_h_aligned or is_v_aligned:
                         target_node_face_tuple = (target_node_name_for_letter, entry_face)
-                        # Check if target face has any offsets assigned AT ALL for this word construction
-                        is_target_face_virgin = target_node_face_tuple not in self.node_connection_manager or \
-                                                not self.node_connection_manager[target_node_face_tuple]
+                        used_indices_on_target_face = self.node_connection_manager.get(target_node_face_tuple, [])
+                        is_target_face_virgin_for_this_offset = start_offset_idx not in used_indices_on_target_face
                         
-                        if is_target_face_virgin:
+                        if not used_indices_on_target_face: # If face is completely unused yet
+                             end_offset_idx = start_offset_idx
+                             self.node_connection_manager.setdefault(target_node_face_tuple, []).append(end_offset_idx)
+                        elif is_target_face_virgin_for_this_offset: # Face used, but particular start_offset_idx is free
                             end_offset_idx = start_offset_idx
                             self.node_connection_manager.setdefault(target_node_face_tuple, []).append(end_offset_idx)
-                        else:
-                            # If target face not virgin, try to use same offset if available, else new one.
-                            # For simplicity now, if not virgin, get its own next available.
-                            # A more robust solution would check if start_offset_idx is available on target.
-                            if start_offset_idx not in self.node_connection_manager.get(target_node_face_tuple, []):
-                                end_offset_idx = start_offset_idx
-                                self.node_connection_manager.setdefault(target_node_face_tuple, []).append(end_offset_idx)
-                            else:
-                                end_offset_idx = self._get_next_offset_idx(target_node_name_for_letter, entry_face)
-                    else: # Diagonal
+                        else: # start_offset_idx is already taken on target face
+                            end_offset_idx = self._get_next_offset_idx(target_node_name_for_letter, entry_face)
+                    else: 
                         end_offset_idx = self._get_next_offset_idx(target_node_name_for_letter, entry_face)
                         
                     calculated_path = calculate_trace_path(
                         start_node_name=from_node_name_for_trace,
                         end_node_name=target_node_name_for_letter,
                         start_ring_level=origin_connect_ring_level,
-                        end_ring_level=target_connect_ring_level,
+                        end_ring_level=effective_target_connect_ring_level, # USE THE NEWLY DETERMINED LEVEL
                         all_node_positions=self.rules['node_positions'],
                         node_layout=self.rules['node_layout'],
                         node_radius=self.node_radius_for_router, 
@@ -192,16 +200,17 @@ class KohdGlyphBuilder:
                         'to_node_name': target_node_name_for_letter,
                         'subnodes_on_trace': list(_subnode_queue_for_current_trace),
                         'connect_from_ring_level': origin_connect_ring_level,
-                        'connect_to_ring_level': target_connect_ring_level,
+                        'connect_to_ring_level': effective_target_connect_ring_level, # Store effective level
                         'path_points': calculated_path,
                         'start_offset_idx': start_offset_idx, 
                         'end_offset_idx': end_offset_idx    
                     })
                     _subnode_queue_for_current_trace.clear()
 
+                    # Update the target node's actual ring_count if this trace connected to a new, higher ring level
                     if is_return_to_target_node:
-                        # This logic correctly increments ring count for future returns
-                        target_node_data['ring_count'] = target_connect_ring_level + 1
+                        if effective_target_connect_ring_level > current_rings_on_target_node:
+                             target_node_data['ring_count'] = effective_target_connect_ring_level
 
 
                     _current_processing_active_node_name = target_node_name_for_letter
@@ -224,7 +233,6 @@ class KohdGlyphBuilder:
         self._rebuild_glyph_elements_for_string(); return True
 
     def _should_add_null_modifier(self) -> bool:
-        # (Logic for _should_add_null_modifier remains unchanged from previous version)
         if not self.current_word_used_node_names or len(self.current_word_used_node_names) == 0:
             return False
         if len(self.current_word_used_node_names) >= 9: 
@@ -255,9 +263,8 @@ class KohdGlyphBuilder:
 
 
     def _find_null_modifier_placement_node(self) -> str | None:
-        # (Logic for _find_null_modifier_placement_node remains unchanged from previous version)
         if not self.current_word_used_node_names:
-             pass # Will use preferred_grid_corners directly
+             pass 
 
         min_r_used, max_r_used, min_c_used, max_c_used = 0, 2, 0, 2 
         if self.current_word_used_node_names:
@@ -283,8 +290,6 @@ class KohdGlyphBuilder:
         return None
 
     def finalize_word(self):
-        # (Logic for finalize_word remains largely unchanged regarding ground/charge/null indicators)
-        # The key changes for offsets are handled in _rebuild_glyph_elements_for_string
         if not self.current_word_string or self.is_finalized: return
         
         active_node_for_ground_trace = self.active_node_name
@@ -297,8 +302,7 @@ class KohdGlyphBuilder:
                 'from_node_name': active_node_for_ground_trace,
                 'subnodes_on_trace': list(self.subnode_queue),
                 'connect_from_ring_level': origin_ring_level_for_ground_trace
-            }) # Note: trace_to_ground does not currently use calculate_trace_path or offsets.
-               # This could be a future enhancement if ground traces also need offsetting.
+            }) 
 
         if active_node_for_ground_trace: 
             self.glyph_elements.append({'type': 'ground_indicator', 'node_name': active_node_for_ground_trace })
@@ -329,33 +333,52 @@ class KohdGlyphBuilder:
 
 if __name__ == '__main__':
     mock_node_radius_main = 20.0
+    # This mock needs to align with KohdCanvasWidget._get_radius_for_specific_ring_level
+    # and respect a MAX_RINGS_TO_DRAW concept for accurate testing.
+    MAX_RINGS_TO_DRAW_TEST = 2 
+    RING_INSET_FACTOR_TEST = 0.7
+    RING_INSET_DECREMENT_TEST = 0.25 # Based on 0.25 in canvas code for subsequent rings
+
     def mock_get_ring_radius_main(ring_level: int) -> float:
         if ring_level == 0: return mock_node_radius_main
-        # Copied from canvas for more accurate testing if MAX_RINGS_TO_DRAW is relevant
-        TEMP_MAX_RINGS_TO_DRAW_MOCK_BUILDER = 2 
-        TEMP_RING_NODE_INSET_FACTOR_MOCK_BUILDER = 0.7
         if ring_level > 0:
-            actual_ring_to_calc = min(ring_level, TEMP_MAX_RINGS_TO_DRAW_MOCK_BUILDER)
-            inset_factor = TEMP_RING_NODE_INSET_FACTOR_MOCK_BUILDER - ((actual_ring_to_calc - 1) * 0.25)
-            return mock_node_radius_main * max(0.1, inset_factor)
+            # Cap ring_level by what's drawable for radius calculation
+            actual_ring_to_calc_for_radius = min(ring_level, MAX_RINGS_TO_DRAW_TEST)
+            
+            # Calculate inset factor based on the capped ring level
+            # Ring 1: inset_factor = RING_INSET_FACTOR_TEST
+            # Ring 2: inset_factor = RING_INSET_FACTOR_TEST - (1 * 0.25)
+            # Ring k: inset_factor = RING_INSET_FACTOR_TEST - ((k-1) * 0.25)
+            current_inset = RING_INSET_FACTOR_TEST
+            if actual_ring_to_calc_for_radius > 1:
+                 current_inset -= (actual_ring_to_calc_for_radius - 1) * RING_INSET_DECREMENT_TEST
+            
+            return mock_node_radius_main * max(0.1, current_inset) # Ensure radius doesn't go below a small threshold
         return mock_node_radius_main
 
 
     builder = KohdGlyphBuilder(node_radius=mock_node_radius_main, get_ring_radius_method=mock_get_ring_radius_main)
     
-    words_to_test_offset = ["DEFD", "MEMO", "MOTHERBOARD", "ADDDA"] 
-    # ADDDA: A(ABC) D(DEF) D(DEF) D(DEF) A(ABC)
-    # Trace 1: ABC -> DEF (for D)
-    # (subnodes on trace: for D(DEF))
-    # (D,D,D on DEF node, no new traces)
-    # Trace 2: DEF -> ABC (for A)
+    # Test words that should create rings and use offsets
+    # BABABA:
+    # B->A (B0, A0) -> A.ring_count becomes 0 (still, not a return yet for A)
+    # A->B (A0, B0 + 1 = B1) -> B.ring_count becomes 1
+    # B->A (B1, A0 + 1 = A1) -> A.ring_count becomes 1
+    # A->B (A1, B1 + 1 = B2) -> B.ring_count becomes 2
+    # B->A (B2, A1 + 1 = A2) -> A.ring_count becomes 2
+    words_to_test = ["BABABA", "MOTHERBOARD", "ADDDA", "DEFD"] 
 
-    for word in words_to_test_offset:
+    for word in words_to_test:
         print(f"\n--- Building word: {word} ---")
-        builder.reset() # Resets connection_manager
+        builder.reset() 
         for char_code in word:
-            builder.add_letter(char_code) # This calls _rebuild, which now uses new offset logic
+            builder.add_letter(char_code) 
         
+        print(f"  Node data for '{word}':")
+        for el_node in builder.glyph_elements:
+            if el_node['type'] == 'node':
+                print(f"    Node: {el_node['name']}, Ring Count: {el_node['ring_count']}")
+
         print(f"  Connection Manager state for '{word}': {builder.node_connection_manager}")
         builder.finalize_word()
         print(f"  Glyph Elements for '{word}' after finalization ({len(builder.get_glyph_elements())}):")
@@ -375,9 +398,12 @@ if __name__ == '__main__':
         builder.reset()
         for char_code in word: builder.add_letter(char_code)
         should_add = builder._should_add_null_modifier()
-        placement = "N/A"
-        if should_add: placement = builder._find_null_modifier_placement_node()
         builder.finalize_word() 
         has_modifier_element = any(el['type'] == 'null_modifier' for el in builder.get_glyph_elements())
         status = "PASS" if should_add == expects_modifier and has_modifier_element == expects_modifier else "FAIL"
-        print(f"Word: '{word}', ExpMod: {expects_modifier}, Calc: {should_add}, HasElem: {has_modifier_element}, Place: {placement} -> {status}")
+        # Get placement for output, even if not used in status check here
+        placement_info = "N/A"
+        if has_modifier_element:
+            mod_el = next((el for el in builder.get_glyph_elements() if el['type'] == 'null_modifier'), None)
+            if mod_el: placement_info = mod_el['node_name']
+        print(f"Word: '{word}', ExpMod: {expects_modifier}, Calc: {should_add}, HasElem: {has_modifier_element}, Place: {placement_info} -> {status}")
